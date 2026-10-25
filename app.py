@@ -16,19 +16,23 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# GOOGLE SHEETS VERİTABANI BAĞLANTISI
+# GOOGLE SHEETS VERİTABANI BAĞLANTISI (GÜÇLENDİRİLDİ)
 # ==========================================
 @st.cache_resource
 def sheets_baglantisi_kur():
     try:
-        json_verisi = json.loads(st.secrets["GOOGLE_JSON"])
+        # Telefondan kopyalarken oluşan fiziksel satır atlamalarını temizleyen zırh
+        ham_veri = st.secrets["GOOGLE_JSON"]
+        temiz_veri = ham_veri.replace('\n', '').replace('\r', '')
+        json_verisi = json.loads(temiz_veri)
+        
         kapsam = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         kimlik = Credentials.from_service_account_info(json_verisi, scopes=kapsam)
         istemci = gspread.authorize(kimlik)
         tablo = istemci.open("ManhwaDB").sheet1
         return tablo
     except Exception as e:
-        st.error(f"Veritabanı bağlantı hatası. Lütfen Secrets kısmına Google JSON verisini doğru girdiğinizden emin olun. Detay: {e}")
+        st.error(f"Veritabanı bağlantı hatası. Detay: {e}")
         return None
 
 tablo = sheets_baglantisi_kur()
@@ -196,7 +200,6 @@ else:
                     
                     st.write("#### Bölüm Listesi")
                     
-                    # Telefonda daha iyi görünmesi için 5 sütun yerine 3 veya 4 sütun daha idealdir.
                     sutunlar = st.columns(4) 
                     degisiklik = False
                     
@@ -217,4 +220,3 @@ else:
                         kullanici_verisi["seriler"][secilen_seri]["okunanlar"] = list(set(okunan_listesi))
                         kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
                         st.toast("Buluta kaydedildi! ☁️", icon="✅")
-                        
