@@ -4,7 +4,6 @@ import requests
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Manga & Webtoon Tracker", page_icon="🌌", layout="wide")
 
 st.markdown("""
@@ -68,8 +67,21 @@ def kullanici_kaydet(k_adi, sifre, seriler_dict):
         tablo.append_row([k_adi, sifre, seriler_json])
 
 # ==========================================
-# ARAMA MOTORLARI
+# ARAMA MOTORLARI VE RESİM İNDİRİCİ
 # ==========================================
+@st.cache_data
+def resmi_indir(url):
+    """MangaDex'in doğrudan resim göstermeyi engellemesini aşmak için resmi sunucuda indirir."""
+    if not url: return None
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        cevap = requests.get(url, headers=headers, timeout=5)
+        if cevap.status_code == 200:
+            return cevap.content
+    except:
+        pass
+    return None
+
 @st.cache_data 
 def mangadex_ara(arama_metni):
     url = "https://api.mangadex.org/manga"
@@ -97,10 +109,15 @@ def jikan_ara(arama_metni):
     except:
         return []
 
+# --- OTURUM YÖNETİMİ ---
 if "aktif_hesap" not in st.session_state:
     st.session_state.aktif_hesap = None
 if "veri_onbellek" not in st.session_state:
     st.session_state.veri_onbellek = verileri_yukle()
+if "sayfa_no" not in st.session_state:
+    st.session_state.sayfa_no = 1
+if "aktif_seri" not in st.session_state:
+    st.session_state.aktif_seri = None
 
 veri = st.session_state.veri_onbellek
 
@@ -145,7 +162,6 @@ else:
     hesap = st.session_state.aktif_hesap
     kullanici_verisi = veri["kullanicilar"][hesap]
     
-    # EKLEME İŞLEMİ İÇİN SABİT FONKSİYON (Callback)
     def seriyi_kutuphaneye_ekle(eklenecek_baslik):
         if eklenecek_baslik not in kullanici_verisi["seriler"]:
             kullanici_verisi["seriler"][eklenecek_baslik] = {"okunanlar": []}
@@ -164,7 +180,6 @@ else:
         st.session_state.veri_onbellek = verileri_yukle()
         st.rerun()
 
-    # --- PROFİL EKRANI ---
     if menu == "📊 Profilim":
         st.markdown('<div class="gradient-text" style="font-size: 2em; text-align: left;">İstatistiklerin</div>', unsafe_allow_html=True)
         toplam_bolum = sum(len(d.get("okunanlar", [])) for d in kullanici_verisi["seriler"].values())
@@ -190,12 +205,10 @@ else:
                 okunan = len(detaylar.get("okunanlar", []))
                 st.progress(min(okunan / 200, 1.0), text=f"{seri_adi} - {okunan} Bölüm")
 
-    # --- SERİ KEŞFET ---
     elif menu == "🔍 Seri Keşfet":
         st.title("🔍 Yeni Seriler Keşfet")
         arama = st.text_input("Manga, Manhwa veya Webtoon adı girin:")
         
-        # Aramayı hafızada tutmak için gerekli yapı
         if "arama_yapildi" not in st.session_state:
             st.session_state.arama_yapildi = False
             
@@ -204,7 +217,6 @@ else:
         if st.button("Dünyada Ara 🌍", type="primary", use_container_width=True):
             st.session_state.arama_yapildi = True
             
-        # Arama kutusu boşaltılırsa sonuçları gizle
         if not arama:
             st.session_state.arama_yapildi = False
             
@@ -236,13 +248,13 @@ else:
                             with st.container(border=True):
                                 col_img, col_info = st.columns([1, 3])
                                 with col_img:
-                                    if kapak_url:
-                                        st.image(kapak_url, use_container_width=True)
+                                    resim_verisi = resmi_indir(kapak_url)
+                                    if resim_verisi:
+                                        st.image(resim_verisi, use_container_width=True)
                                     else:
                                         st.write("🖼️ Kapak Yok")
                                 with col_info:
                                     st.subheader(f"📖 {baslik}")
-                                    # BUTON DÜZELTMESİ (on_click kullanıldı)
                                     st.button("Kütüphaneme Ekle ➕", key=f"md_{seri['id']}", on_click=seriyi_kutuphaneye_ekle, args=(baslik,), use_container_width=True)
                     else:
                         st.warning("MangaDex'te sonuç bulunamadı. Lütfen MyAnimeList seçeneği ile tekrar arayın.")
@@ -258,19 +270,18 @@ else:
                             with st.container(border=True):
                                 col_img, col_info = st.columns([1, 3])
                                 with col_img:
-                                    if kapak_url:
-                                        st.image(kapak_url, use_container_width=True)
+                                    resim_verisi = resmi_indir(kapak_url)
+                                    if resim_verisi:
+                                        st.image(resim_verisi, use_container_width=True)
                                     else:
                                         st.write("🖼️ Kapak Yok")
                                 with col_info:
                                     st.subheader(f"📖 {baslik}")
                                     st.caption(f"Durum: {durum}")
-                                    # BUTON DÜZELTMESİ (on_click kullanıldı)
                                     st.button("Kütüphaneme Ekle ➕", key=f"mal_{seri['mal_id']}", on_click=seriyi_kutuphaneye_ekle, args=(baslik,), use_container_width=True)
                     else:
                         st.warning("Sonuç bulunamadı.")
                         
-    # --- KÜTÜPHANEM ---
     elif menu == "📖 Kütüphanem":
         st.title("📖 Kişisel Kütüphanem")
         
@@ -280,16 +291,33 @@ else:
             secilen_seri = st.selectbox("Seriyi seç:", list(kullanici_verisi["seriler"].keys()))
             
             if secilen_seri:
+                # Başka seriye geçildiğinde sayfayı 1'e sıfırla
+                if st.session_state.aktif_seri != secilen_seri:
+                    st.session_state.aktif_seri = secilen_seri
+                    st.session_state.sayfa_no = 1
+
                 st.write("---")
                 with st.container(border=True):
                     st.markdown(f"### 🔖 {secilen_seri}")
-                    baslangic = st.number_input("Sayfa Başlangıcı:", min_value=1, value=1, step=50)
                     
-                    bitis = baslangic + 49
+                    # YENİ: Butonlu Sayfalama Sistemi
+                    col_sol, col_orta, col_sag = st.columns([1, 2, 1])
+                    with col_sol:
+                        if st.button("⬅️ Önceki Sayfa", use_container_width=True) and st.session_state.sayfa_no > 1:
+                            st.session_state.sayfa_no -= 1
+                            st.rerun()
+                    with col_orta:
+                        baslangic = (st.session_state.sayfa_no - 1) * 50 + 1
+                        bitis = baslangic + 49
+                        st.markdown(f"<div style='text-align: center; padding-top: 5px;'><b>Sayfa {st.session_state.sayfa_no}</b><br><small>(Bölüm {baslangic} - {bitis})</small></div>", unsafe_allow_html=True)
+                    with col_sag:
+                        if st.button("Sonraki Sayfa ➡️", use_container_width=True):
+                            st.session_state.sayfa_no += 1
+                            st.rerun()
+                            
+                    st.write("---")
+                    
                     okunan_listesi = kullanici_verisi["seriler"][secilen_seri].get("okunanlar", [])
-                    
-                    st.write("#### Bölüm Listesi")
-                    
                     sutunlar = st.columns(4) 
                     degisiklik = False
                     
