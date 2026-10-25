@@ -67,11 +67,10 @@ def kullanici_kaydet(k_adi, sifre, seriler_dict):
         tablo.append_row([k_adi, sifre, seriler_json])
 
 # ==========================================
-# ARAMA MOTORLARI VE RESİM İNDİRİCİ
+# ARAMA MOTORLARI VE RESİM İNDİRİCİ (LİMİT 15 YAPILDI)
 # ==========================================
 @st.cache_data
 def resmi_indir(url):
-    """MangaDex'in doğrudan resim göstermeyi engellemesini aşmak için resmi sunucuda indirir."""
     if not url: return None
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -88,7 +87,7 @@ def mangadex_ara(arama_metni):
     parametreler = {
         "title": arama_metni, 
         "availableTranslatedLanguage[]": "en", 
-        "limit": 5, 
+        "limit": 15, 
         "includes[]": "cover_art"
     }
     try:
@@ -101,7 +100,7 @@ def mangadex_ara(arama_metni):
 @st.cache_data
 def jikan_ara(arama_metni):
     url = "https://api.jikan.moe/v4/manga"
-    parametreler = {"q": arama_metni, "limit": 5}
+    parametreler = {"q": arama_metni, "limit": 15}
     try:
         cevap = requests.get(url, params=parametreler)
         cevap.raise_for_status()
@@ -291,7 +290,6 @@ else:
             secilen_seri = st.selectbox("Seriyi seç:", list(kullanici_verisi["seriler"].keys()))
             
             if secilen_seri:
-                # Başka seriye geçildiğinde sayfayı 1'e sıfırla
                 if st.session_state.aktif_seri != secilen_seri:
                     st.session_state.aktif_seri = secilen_seri
                     st.session_state.sayfa_no = 1
@@ -300,7 +298,6 @@ else:
                 with st.container(border=True):
                     st.markdown(f"### 🔖 {secilen_seri}")
                     
-                    # YENİ: Butonlu Sayfalama Sistemi
                     col_sol, col_orta, col_sag = st.columns([1, 2, 1])
                     with col_sol:
                         if st.button("⬅️ Önceki Sayfa", use_container_width=True) and st.session_state.sayfa_no > 1:
