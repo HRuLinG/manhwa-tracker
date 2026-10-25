@@ -16,7 +16,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# GOOGLE SHEETS BAĞLANTISI (ZIRHLI VERSİYON)
+# GOOGLE SHEETS BAĞLANTISI 
 # ==========================================
 @st.cache_resource
 def sheets_baglantisi_kur():
@@ -55,7 +55,6 @@ def verileri_yukle():
     except:
         return {"kullanicilar": {}}
 
-# HATA DÜZELTMESİ YAPILAN KAYIT FONKSİYONU
 def kullanici_kaydet(k_adi, sifre, seriler_dict):
     if not tablo: return
     seriler_json = json.dumps(seriler_dict, ensure_ascii=False)
@@ -69,12 +68,17 @@ def kullanici_kaydet(k_adi, sifre, seriler_dict):
         tablo.append_row([k_adi, sifre, seriler_json])
 
 # ==========================================
-# ARAMA MOTORLARI (API'LER)
+# ARAMA MOTORLARI
 # ==========================================
 @st.cache_data 
 def mangadex_ara(arama_metni):
     url = "https://api.mangadex.org/manga"
-    parametreler = {"title": arama_metni, "availableTranslatedLanguage[]": "en", "limit": 10}
+    parametreler = {
+        "title": arama_metni, 
+        "availableTranslatedLanguage[]": "en", 
+        "limit": 5, 
+        "includes[]": "cover_art"
+    }
     try:
         cevap = requests.get(url, params=parametreler)
         cevap.raise_for_status()
@@ -85,7 +89,7 @@ def mangadex_ara(arama_metni):
 @st.cache_data
 def jikan_ara(arama_metni):
     url = "https://api.jikan.moe/v4/manga"
-    parametreler = {"q": arama_metni, "limit": 10}
+    parametreler = {"q": arama_metni, "limit": 5}
     try:
         cevap = requests.get(url, params=parametreler)
         cevap.raise_for_status()
@@ -93,7 +97,6 @@ def jikan_ara(arama_metni):
     except:
         return []
 
-# --- OTURUM KONTROLÜ ---
 if "aktif_hesap" not in st.session_state:
     st.session_state.aktif_hesap = None
 if "veri_onbellek" not in st.session_state:
@@ -142,6 +145,15 @@ else:
     hesap = st.session_state.aktif_hesap
     kullanici_verisi = veri["kullanicilar"][hesap]
     
+    # EKLEME İŞLEMİ İÇİN SABİT FONKSİYON (Callback)
+    def seriyi_kutuphaneye_ekle(eklenecek_baslik):
+        if eklenecek_baslik not in kullanici_verisi["seriler"]:
+            kullanici_verisi["seriler"][eklenecek_baslik] = {"okunanlar": []}
+            kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
+            st.toast(f"**{eklenecek_baslik}** eklendi!", icon="🎉")
+        else:
+            st.toast("Zaten kütüphanende var!", icon="⚠️")
+    
     st.sidebar.markdown(f"## 👤 Hoş Geldin, **{hesap}**")
     st.sidebar.write("---")
     menu = st.sidebar.radio("Navigasyon", ["📊 Profilim", "🔍 Seri Keşfet", "📖 Kütüphanem"], label_visibility="collapsed")
@@ -178,56 +190,85 @@ else:
                 okunan = len(detaylar.get("okunanlar", []))
                 st.progress(min(okunan / 200, 1.0), text=f"{seri_adi} - {okunan} Bölüm")
 
-    # --- SERİ KEŞFET (ÇİFT ARAMA MOTORLU) ---
+    # --- SERİ KEŞFET ---
     elif menu == "🔍 Seri Keşfet":
         st.title("🔍 Yeni Seriler Keşfet")
         arama = st.text_input("Manga, Manhwa veya Webtoon adı girin:")
         
-        # Arama motoru seçimi
+        # Aramayı hafızada tutmak için gerekli yapı
+        if "arama_yapildi" not in st.session_state:
+            st.session_state.arama_yapildi = False
+            
         kaynak = st.radio("Arama Kaynağını Seçin:", ["📖 MangaDex (Öncelikli)", "🌍 MyAnimeList (Daha Kapsamlı)"])
         
         if st.button("Dünyada Ara 🌍", type="primary", use_container_width=True):
-            if arama:
-                with st.spinner(f"{kaynak.split(' ')[1]} üzerinde aranıyor..."):
-                    
-                    if "MangaDex" in kaynak:
-                        sonuclar = mangadex_ara(arama)
-                        if sonuclar:
-                            for seri in sonuclar:
-                                baslik_dict = seri["attributes"]["title"]
-                                baslik = baslik_dict.get("en", list(baslik_dict.values())[0])
-                                
-                                with st.container(border=True):
-                                    st.subheader(f"📖 {baslik}")
-                                    if st.button("Kütüphaneme Ekle ➕", key=f"md_{seri['id']}", use_container_width=True):
-                                        if baslik not in kullanici_verisi["seriler"]:
-                                            kullanici_verisi["seriler"][baslik] = {"okunanlar": []}
-                                            kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
-                                            st.toast(f"**{baslik}** eklendi!", icon="🎉")
-                                        else:
-                                            st.toast("Zaten kütüphanende var!", icon="⚠️")
-                        else:
-                            st.warning("MangaDex'te sonuç bulunamadı. Lütfen MyAnimeList seçeneği ile tekrar arayın.")
+            st.session_state.arama_yapildi = True
+            
+        # Arama kutusu boşaltılırsa sonuçları gizle
+        if not arama:
+            st.session_state.arama_yapildi = False
+            
+        if st.session_state.arama_yapildi and arama:
+            with st.spinner(f"{kaynak.split(' ')[1]} üzerinde aranıyor..."):
+                
+                if "MangaDex" in kaynak:
+                    sonuclar = mangadex_ara(arama)
+                    if sonuclar:
+                        for seri in sonuclar:
+                            baslik_dict = seri["attributes"]["title"]
+                            baslik = baslik_dict.get("en", "")
+                            if not baslik:
+                                for alt in seri["attributes"].get("altTitles", []):
+                                    if "en" in alt:
+                                        baslik = alt["en"]
+                                        break
+                            if not baslik:
+                                baslik = list(baslik_dict.values())[0] if baslik_dict else "Bilinmeyen Başlık"
+
+                            kapak_url = ""
+                            for rel in seri.get("relationships", []):
+                                if rel["type"] == "cover_art":
+                                    dosya_adi = rel.get("attributes", {}).get("fileName")
+                                    if dosya_adi:
+                                        kapak_url = f"https://uploads.mangadex.org/covers/{seri['id']}/{dosya_adi}.256.jpg"
+                                    break
                             
-                    elif "MyAnimeList" in kaynak:
-                        sonuclar = jikan_ara(arama)
-                        if sonuclar:
-                            for seri in sonuclar:
-                                baslik = seri.get("title_english") or seri.get("title", "Bilinmeyen")
-                                durum = seri.get("status", "Bilinmiyor")
-                                
-                                with st.container(border=True):
+                            with st.container(border=True):
+                                col_img, col_info = st.columns([1, 3])
+                                with col_img:
+                                    if kapak_url:
+                                        st.image(kapak_url, use_container_width=True)
+                                    else:
+                                        st.write("🖼️ Kapak Yok")
+                                with col_info:
+                                    st.subheader(f"📖 {baslik}")
+                                    # BUTON DÜZELTMESİ (on_click kullanıldı)
+                                    st.button("Kütüphaneme Ekle ➕", key=f"md_{seri['id']}", on_click=seriyi_kutuphaneye_ekle, args=(baslik,), use_container_width=True)
+                    else:
+                        st.warning("MangaDex'te sonuç bulunamadı. Lütfen MyAnimeList seçeneği ile tekrar arayın.")
+                        
+                elif "MyAnimeList" in kaynak:
+                    sonuclar = jikan_ara(arama)
+                    if sonuclar:
+                        for seri in sonuclar:
+                            baslik = seri.get("title_english") or seri.get("title", "Bilinmeyen Başlık")
+                            kapak_url = seri.get("images", {}).get("jpg", {}).get("image_url", "")
+                            durum = seri.get("status", "Bilinmiyor")
+                            
+                            with st.container(border=True):
+                                col_img, col_info = st.columns([1, 3])
+                                with col_img:
+                                    if kapak_url:
+                                        st.image(kapak_url, use_container_width=True)
+                                    else:
+                                        st.write("🖼️ Kapak Yok")
+                                with col_info:
                                     st.subheader(f"📖 {baslik}")
                                     st.caption(f"Durum: {durum}")
-                                    if st.button("Kütüphaneme Ekle ➕", key=f"mal_{seri['mal_id']}", use_container_width=True):
-                                        if baslik not in kullanici_verisi["seriler"]:
-                                            kullanici_verisi["seriler"][baslik] = {"okunanlar": []}
-                                            kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
-                                            st.toast(f"**{baslik}** eklendi!", icon="🎉")
-                                        else:
-                                            st.toast("Zaten kütüphanende var!", icon="⚠️")
-                        else:
-                            st.warning("Sonuç bulunamadı.")
+                                    # BUTON DÜZELTMESİ (on_click kullanıldı)
+                                    st.button("Kütüphaneme Ekle ➕", key=f"mal_{seri['mal_id']}", on_click=seriyi_kutuphaneye_ekle, args=(baslik,), use_container_width=True)
+                    else:
+                        st.warning("Sonuç bulunamadı.")
                         
     # --- KÜTÜPHANEM ---
     elif menu == "📖 Kütüphanem":
