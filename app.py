@@ -61,8 +61,11 @@ def kullanici_kaydet(k_adi, sifre, seriler_dict):
     seriler_json = json.dumps(seriler_dict, ensure_ascii=False)
     try:
         hucre = tablo.find(k_adi, in_column=1)
-        tablo.update_cell(hucre.row, 3, seriler_json)
-    except gspread.exceptions.CellNotFound:
+        if hucre is None:
+            tablo.append_row([k_adi, sifre, seriler_json])
+        else:
+            tablo.update_cell(hucre.row, 3, seriler_json)
+    except Exception:
         tablo.append_row([k_adi, sifre, seriler_json])
 
 @st.cache_data 
