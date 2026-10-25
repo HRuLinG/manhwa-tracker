@@ -16,12 +16,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# GOOGLE SHEETS VERİTABANI BAĞLANTISI (GÜÇLENDİRİLDİ)
+# GOOGLE SHEETS BAĞLANTISI (ZIRHLI VERSİYON)
 # ==========================================
 @st.cache_resource
 def sheets_baglantisi_kur():
     try:
-        # Telefondan kopyalarken oluşan fiziksel satır atlamalarını temizleyen zırh
         ham_veri = st.secrets["GOOGLE_JSON"]
         temiz_veri = ham_veri.replace('\n', '').replace('\r', '')
         json_verisi = json.loads(temiz_veri)
@@ -56,6 +55,7 @@ def verileri_yukle():
     except:
         return {"kullanicilar": {}}
 
+# HATA DÜZELTMESİ YAPILAN KAYIT FONKSİYONU
 def kullanici_kaydet(k_adi, sifre, seriler_dict):
     if not tablo: return
     seriler_json = json.dumps(seriler_dict, ensure_ascii=False)
@@ -68,6 +68,9 @@ def kullanici_kaydet(k_adi, sifre, seriler_dict):
     except Exception:
         tablo.append_row([k_adi, sifre, seriler_json])
 
+# ==========================================
+# ARAMA MOTORLARI (API'LER)
+# ==========================================
 @st.cache_data 
 def mangadex_ara(arama_metni):
     url = "https://api.mangadex.org/manga"
@@ -79,6 +82,18 @@ def mangadex_ara(arama_metni):
     except:
         return []
 
+@st.cache_data
+def jikan_ara(arama_metni):
+    url = "https://api.jikan.moe/v4/manga"
+    parametreler = {"q": arama_metni, "limit": 10}
+    try:
+        cevap = requests.get(url, params=parametreler)
+        cevap.raise_for_status()
+        return cevap.json().get("data", [])
+    except:
+        return []
+
+# --- OTURUM KONTROLÜ ---
 if "aktif_hesap" not in st.session_state:
     st.session_state.aktif_hesap = None
 if "veri_onbellek" not in st.session_state:
@@ -87,7 +102,7 @@ if "veri_onbellek" not in st.session_state:
 veri = st.session_state.veri_onbellek
 
 # ==========================================
-# EKRANLAR
+# EKRAN 1: GİRİŞ YAP / KAYIT OL
 # ==========================================
 if st.session_state.aktif_hesap is None:
     st.markdown('<div class="gradient-text">🌌 Manga & Webtoon Tracker</div>', unsafe_allow_html=True)
@@ -120,6 +135,9 @@ if st.session_state.aktif_hesap is None:
                 else:
                     st.error("Kullanıcı adı ve şifre boş bırakılamaz.")
 
+# ==========================================
+# EKRAN 2: ANA UYGULAMA
+# ==========================================
 else:
     hesap = st.session_state.aktif_hesap
     kullanici_verisi = veri["kullanicilar"][hesap]
@@ -134,6 +152,7 @@ else:
         st.session_state.veri_onbellek = verileri_yukle()
         st.rerun()
 
+    # --- PROFİL EKRANI ---
     if menu == "📊 Profilim":
         st.markdown('<div class="gradient-text" style="font-size: 2em; text-align: left;">İstatistiklerin</div>', unsafe_allow_html=True)
         toplam_bolum = sum(len(d.get("okunanlar", [])) for d in kullanici_verisi["seriler"].values())
@@ -159,31 +178,58 @@ else:
                 okunan = len(detaylar.get("okunanlar", []))
                 st.progress(min(okunan / 200, 1.0), text=f"{seri_adi} - {okunan} Bölüm")
 
+    # --- SERİ KEŞFET (ÇİFT ARAMA MOTORLU) ---
     elif menu == "🔍 Seri Keşfet":
         st.title("🔍 Yeni Seriler Keşfet")
         arama = st.text_input("Manga, Manhwa veya Webtoon adı girin:")
         
-        if st.button("MangaDex'te Ara 🌍", type="primary", use_container_width=True):
+        # Arama motoru seçimi
+        kaynak = st.radio("Arama Kaynağını Seçin:", ["📖 MangaDex (Öncelikli)", "🌍 MyAnimeList (Daha Kapsamlı)"])
+        
+        if st.button("Dünyada Ara 🌍", type="primary", use_container_width=True):
             if arama:
-                with st.spinner("Aranıyor..."):
-                    sonuclar = mangadex_ara(arama)
-                    if sonuclar:
-                        for seri in sonuclar:
-                            baslik_dict = seri["attributes"]["title"]
-                            baslik = baslik_dict.get("en", list(baslik_dict.values())[0])
+                with st.spinner(f"{kaynak.split(' ')[1]} üzerinde aranıyor..."):
+                    
+                    if "MangaDex" in kaynak:
+                        sonuclar = mangadex_ara(arama)
+                        if sonuclar:
+                            for seri in sonuclar:
+                                baslik_dict = seri["attributes"]["title"]
+                                baslik = baslik_dict.get("en", list(baslik_dict.values())[0])
+                                
+                                with st.container(border=True):
+                                    st.subheader(f"📖 {baslik}")
+                                    if st.button("Kütüphaneme Ekle ➕", key=f"md_{seri['id']}", use_container_width=True):
+                                        if baslik not in kullanici_verisi["seriler"]:
+                                            kullanici_verisi["seriler"][baslik] = {"okunanlar": []}
+                                            kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
+                                            st.toast(f"**{baslik}** eklendi!", icon="🎉")
+                                        else:
+                                            st.toast("Zaten kütüphanende var!", icon="⚠️")
+                        else:
+                            st.warning("MangaDex'te sonuç bulunamadı. Lütfen MyAnimeList seçeneği ile tekrar arayın.")
                             
-                            with st.container(border=True):
-                                st.subheader(f"📖 {baslik}")
-                                if st.button("Kütüphaneme Ekle ➕", key=f"btn_{seri['id']}", use_container_width=True):
-                                    if baslik not in kullanici_verisi["seriler"]:
-                                        kullanici_verisi["seriler"][baslik] = {"okunanlar": []}
-                                        kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
-                                        st.toast(f"**{baslik}** eklendi!", icon="🎉")
-                                    else:
-                                        st.toast("Zaten kütüphanende var!", icon="⚠️")
-                    else:
-                        st.warning("Sonuç bulunamadı.")
+                    elif "MyAnimeList" in kaynak:
+                        sonuclar = jikan_ara(arama)
+                        if sonuclar:
+                            for seri in sonuclar:
+                                baslik = seri.get("title_english") or seri.get("title", "Bilinmeyen")
+                                durum = seri.get("status", "Bilinmiyor")
+                                
+                                with st.container(border=True):
+                                    st.subheader(f"📖 {baslik}")
+                                    st.caption(f"Durum: {durum}")
+                                    if st.button("Kütüphaneme Ekle ➕", key=f"mal_{seri['mal_id']}", use_container_width=True):
+                                        if baslik not in kullanici_verisi["seriler"]:
+                                            kullanici_verisi["seriler"][baslik] = {"okunanlar": []}
+                                            kullanici_kaydet(hesap, kullanici_verisi["sifre"], kullanici_verisi["seriler"])
+                                            st.toast(f"**{baslik}** eklendi!", icon="🎉")
+                                        else:
+                                            st.toast("Zaten kütüphanende var!", icon="⚠️")
+                        else:
+                            st.warning("Sonuç bulunamadı.")
                         
+    # --- KÜTÜPHANEM ---
     elif menu == "📖 Kütüphanem":
         st.title("📖 Kişisel Kütüphanem")
         
